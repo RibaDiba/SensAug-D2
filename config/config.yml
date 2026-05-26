@@ -1,0 +1,32 @@
+BASE_MODEL: "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
+
+MODELNAME: "mask_rcnn_R_101_FPN_3x"
+MODELTYPE: "instance_segmentation"
+
+MODEL:
+  WEIGHTS: "/projects/PUCHALLA/LLP2024/tumor-segmentation/models/BACKBONES/model_final_a3ec72.pkl"
+  ROI_HEADS:
+    NUM_CLASSES: 1
+    BATCH_SIZE_PER_IMAGE: 512
+    POSITIVE_FRACTION: 0.5
+    SCORE_THRESH_TEST: 0.3
+    NMS_THRESH_TEST: 0.3
+
+DATASETS:
+  TRAIN: ["my_dataset_train"]
+  TEST: ["my_dataset_test", "my_dataset_val"]
+
+DATALOADER:
+  NUM_WORKERS: 1
+  FILTER_EMPTY_ANNOTATIONS: false
+
+SOLVER:
+  MAX_ITER: 5000
+  IMS_PER_BATCH: 2
+  BASE_LR: 0.0005
+  STEPS: [3000, 4000]
+  GAMMA: 0.5
+  WARMUP_ITERS: 800
+  WARMUP_FACTOR: 0.1
+
+OUTPUT_DIR: "model_output/"
