@@ -70,7 +70,9 @@ def parse_args():
         help="Path to the YAML config file"
     )
     parser.add_argument("--num_iterations", type=int, default=None, help="Override SOLVER.MAX_ITER")
-    parser.add_argument("--model_name", type=str, default=None, help="Override BASE_MODEL")
+    parser.add_argument("--base_model", type=str, default=None, help="Override BASE_MODEL")
+    parser.add_argument("--jobname", type=str, default=None, help="Override JOBNAME (used in hook outputs)")
+    parser.add_argument("--eval_period", type=int, default=None, help="Override EVAL_PERIOD (IoU eval frequency)")
     return parser.parse_args()
 
 
@@ -86,13 +88,17 @@ def train(config):
     project_root = Path(__file__).parent.parent
 
     cfg = get_cfg()
-    cfg.merge_from_file(model_zoo.get_config_file(config.pop("BASE_MODEL")))
+    base_model = config.pop("BASE_MODEL")
+    cfg.merge_from_file(model_zoo.get_config_file(base_model))
 
-    model_name = config.pop("MODELNAME")
+    job_name = config.pop("JOBNAME", "")
+    eval_period = config.pop("EVAL_PERIOD", 100)
     cfg.merge_from_list(flatten_cfg(config))
 
-    cfg.MODELNAME = model_name
-    cfg.OUTPUT_DIR = str(project_root / "models" / cfg.MODELNAME)
+    cfg.JOBNAME = job_name
+    cfg.EVAL_PERIOD = eval_period
+    dir_name = job_name if job_name else Path(base_model).stem
+    cfg.OUTPUT_DIR = str(project_root / "models" / dir_name)
     os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
 
 
@@ -107,6 +113,10 @@ if __name__ == "__main__":
         config = yaml.safe_load(f)
     if args.num_iterations is not None:
         config["SOLVER"]["MAX_ITER"] = args.num_iterations
-    if args.model_name is not None:
-        config["BASE_MODEL"] = args.model_name
+    if args.base_model is not None:
+        config["BASE_MODEL"] = args.base_model
+    if args.jobname is not None:
+        config["JOBNAME"] = args.jobname
+    if args.eval_period is not None:
+        config["EVAL_PERIOD"] = args.eval_period
     train(config)
