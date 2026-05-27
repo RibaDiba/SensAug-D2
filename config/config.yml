@@ -1,7 +1,7 @@
 BASE_MODEL: "COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml"
 
-MODELNAME: "mask_rcnn_R_101_FPN_3x"
 MODELTYPE: "instance_segmentation"
+JOBNAME: ""
 
 MODEL:
   WEIGHTS: "/projects/PUCHALLA/LLP2024/tumor-segmentation/models/BACKBONES/model_final_a3ec72.pkl"
