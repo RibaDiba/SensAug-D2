@@ -1,5 +1,6 @@
 import os, json
 import matplotlib.pyplot as plt
+from hooks.plot_style import apply_style
 from detectron2.engine.hooks import HookBase
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
 from detectron2.data import build_detection_test_loader
@@ -54,18 +55,20 @@ class APVisualizationHook(HookBase):
 
     def after_train(self):
         """Save the AP curve plot (and optionally JSON data) after training ends."""
-        plt.plot(list(self.AP_dict.keys()), list(self.AP_dict.values()), label="AP")
-        plt.plot(list(self.AP_75.keys()), list(self.AP_75.values()), label="AP75")
-        plt.plot(list(self.AP_50.keys()), list(self.AP_50.values()), label="AP50")
-        plt.title(f"AP Curve - {self.job_name} - Validation Set")
-        plt.xlabel("Iteration")
-        plt.ylabel("AP")
-        plt.legend()
-        plt.grid(True)
+        apply_style()
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(list(self.AP_dict.keys()), list(self.AP_dict.values()), marker="o", label="AP")
+        ax.plot(list(self.AP_75.keys()), list(self.AP_75.values()), marker="s", label="AP75")
+        ax.plot(list(self.AP_50.keys()), list(self.AP_50.values()), marker="^", label="AP50")
+        ax.set_title(f"AP Curve \u2014 {self.job_name} \u2014 Validation Set")
+        ax.set_xlabel("Iteration")
+        ax.set_ylabel("Average Precision")
+        ax.legend()
 
         save_path = os.path.join(self.output_dir, f"{self.job_name}_AP_plot.png")
-        plt.savefig(save_path)
-        plt.close()
+        fig.savefig(save_path, bbox_inches="tight")
+        plt.close(fig)
         print(f"Saved AP curve to {save_path}")
 
         if self.save_data:
