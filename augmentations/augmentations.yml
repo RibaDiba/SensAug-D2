@@ -1,0 +1,25 @@
+resize:
+  min_size: [640, 672, 704, 736, 768, 800]
+  max_size: 1333
+  sample_style: "choice"
+
+random_flip:
+  prob: 0.5
+  horizontal: true
+  vertical: false
+
+gaussian_blur:
+  kernel_size: 5
+
+gaussian_noise:
+  sigma: 10.0
+
+rgb_perturbation:
+  channel: 0       # 0=R, 1=G, 2=B
+  alpha: 0.3
+  direction: 1     # 1=lighter, 0=darker
+
+hsv_perturbation:
+  channel: 1       # 0=H, 1=S, 2=V
+  alpha: 0.3
+  direction: 0     # 1=lighter, 0=darker

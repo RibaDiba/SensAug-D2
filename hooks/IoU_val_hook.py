@@ -3,6 +3,7 @@ import json
 
 import matplotlib.pyplot as plt
 import numpy as np
+from hooks.plot_style import apply_style
 import torch
 from detectron2.engine.hooks import HookBase
 from detectron2.data import build_detection_test_loader, DatasetCatalog
@@ -267,24 +268,25 @@ class IoUHook(HookBase):
         if not self.training_data:
             return
 
+        apply_style()
+
         iterations = list(self.training_data.keys())
         count_50 = [v["count_50"] for v in self.training_data.values()]
         count_75 = [v["count_75"] for v in self.training_data.values()]
         count_90 = [v["count_90"] for v in self.training_data.values()]
         count_failed = [v["count_failed"] for v in self.training_data.values()]
 
-        plt.figure()
-        plt.plot(iterations, count_50, label="IoU >= 50")
-        plt.plot(iterations, count_75, label="IoU >= 75")
-        plt.plot(iterations, count_90, label="IoU >= 90")
-        plt.plot(iterations, count_failed, label="IoU < 50 (failed)")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(iterations, count_50, marker="o", label="IoU >= 50")
+        ax.plot(iterations, count_75, marker="s", label="IoU >= 75")
+        ax.plot(iterations, count_90, marker="^", label="IoU >= 90")
+        ax.plot(iterations, count_failed, marker="x", label="IoU < 50 (failed)")
 
-        plt.title(f"IoU During Training - Validation Set - {self.job_name}")
-        plt.xlabel("Iteration")
-        plt.ylabel("Image Count")
-        plt.legend()
-        plt.grid(True)
+        ax.set_title(f"IoU During Training \u2014 Validation Set \u2014 {self.model_name}")
+        ax.set_xlabel("Iteration")
+        ax.set_ylabel("Image Count")
+        ax.legend()
 
-        save_path = os.path.join(self.output_dir, f"{self.job_name}_IoU.png")
-        plt.savefig(save_path)
-        plt.close()
+        save_path = os.path.join(self.output_dir, f"{self.model_name}_IoU.png")
+        fig.savefig(save_path, bbox_inches="tight")
+        plt.close(fig)

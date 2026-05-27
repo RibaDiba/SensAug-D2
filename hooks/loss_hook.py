@@ -3,6 +3,7 @@ import os
 
 import matplotlib.pyplot as plt
 import torch
+from hooks.plot_style import apply_style
 from detectron2.engine.hooks import HookBase
 from detectron2.utils.events import get_event_storage
 
@@ -94,49 +95,52 @@ class TrainingLossHook(HookBase):
 
     def _save_plots(self):
         """Save a 2-panel figure with total loss and mask loss curves."""
-        fig, axs = plt.subplots(1, 2, figsize=(12, 5))
+        apply_style()
+
+        fig, axs = plt.subplots(1, 2, figsize=(14, 6))
         fig.suptitle(
-            f"Losses for {self.job_name} — {self.trainer.max_iter} iterations",
-            fontsize=14,
+            f"Losses for {self.job_name} \u2014 {self.trainer.max_iter} iterations",
+            fontsize=15,
+            fontweight="bold",
         )
 
         axs[0].plot(
             list(self.loss_dict_total_train.keys()),
             list(self.loss_dict_total_train.values()),
+            marker="o", markevery=max(len(self.loss_dict_total_train) // 15, 1),
             label="train",
         )
         if self.loss_dict_total_val:
             axs[0].plot(
                 list(self.loss_dict_total_val.keys()),
                 list(self.loss_dict_total_val.values()),
-                label="val",
+                marker="s", label="val",
             )
         axs[0].set_title("Total Loss")
         axs[0].set_xlabel("Iteration")
         axs[0].set_ylabel("Loss")
         axs[0].legend()
-        axs[0].grid(True)
 
         axs[1].plot(
             list(self.loss_dict_mask_train.keys()),
             list(self.loss_dict_mask_train.values()),
+            marker="o", markevery=max(len(self.loss_dict_mask_train) // 15, 1),
             label="train",
         )
         if self.loss_dict_mask_val:
             axs[1].plot(
                 list(self.loss_dict_mask_val.keys()),
                 list(self.loss_dict_mask_val.values()),
-                label="val",
+                marker="s", label="val",
             )
         axs[1].set_title("Mask Loss")
         axs[1].set_xlabel("Iteration")
         axs[1].set_ylabel("Loss")
         axs[1].legend()
-        axs[1].grid(True)
 
-        fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+        fig.tight_layout(rect=[0, 0.03, 1, 0.93])
         out_path = os.path.join(self.output_dir, f"{self.job_name}_loss_plot.png")
-        fig.savefig(out_path)
+        fig.savefig(out_path, bbox_inches="tight")
         plt.close(fig)
         print(f"Saved loss curves to {out_path}")
 
