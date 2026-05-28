@@ -3,11 +3,11 @@ import json
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pycocotools.mask as mask_util
 from hooks.plot_style import apply_style
 import torch
 from detectron2.engine.hooks import HookBase
 from detectron2.data import build_detection_test_loader, DatasetCatalog
-from detectron2.structures import PolygonMasks
 from detectron2.utils.events import get_event_storage
 
 
@@ -94,12 +94,13 @@ def _polygons_to_binary_masks(polygon_segmentations, height, width):
     Returns:
         Float tensor of shape (N, H, W) with binary masks.
     """
-    poly_masks = PolygonMasks(polygon_segmentations)
-    bit_masks = poly_masks.crop_and_resize(
-        torch.tensor([[0.0, 0.0, float(width), float(height)]]).repeat(len(polygon_segmentations), 1),
-        height,
-    )
-    return bit_masks.float()
+    masks = []
+    for polys in polygon_segmentations:
+        rles = mask_util.frPyObjects(polys, height, width)
+        rle = mask_util.merge(rles)
+        mask = mask_util.decode(rle)
+        masks.append(mask)
+    return torch.tensor(np.stack(masks), dtype=torch.float32)
 
 
 class IoUHook(HookBase):
