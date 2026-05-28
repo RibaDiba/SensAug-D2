@@ -1,4 +1,5 @@
 model_output/
+data/
 .claude/
 
 CLAUDE.md
