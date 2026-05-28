@@ -293,11 +293,11 @@ class IoUHook(HookBase):
         ax.plot(iterations, count_90, marker="^", label="IoU >= 90")
         ax.plot(iterations, count_failed, marker="x", label="IoU < 50 (failed)")
 
-        ax.set_title(f"IoU During Training \u2014 Validation Set \u2014 {self.model_name}")
+        ax.set_title(f"IoU During Training \u2014 Validation Set \u2014 {self.job_name}")
         ax.set_xlabel("Iteration")
         ax.set_ylabel("Image Count")
         ax.legend()
 
-        save_path = os.path.join(self.output_dir, f"{self.model_name}_IoU.png")
+        save_path = os.path.join(self.output_dir, f"{self.job_name}_IoU.png")
         fig.savefig(save_path, bbox_inches="tight")
         plt.close(fig)
