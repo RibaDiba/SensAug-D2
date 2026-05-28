@@ -229,13 +229,21 @@ class IoUHook(HookBase):
                     pred_masks = instances.pred_masks.float()  # (N_pred, H, W)
 
                     # Convert GT polygon annotations to binary masks
-                    # Use original image dims (not resized tensor dims),
-                    # since Detectron2 resizes pred_masks back to original size.
-                    h, w = inp["height"], inp["width"]
+                    # Use original image dims since GT polygons are in that space.
+                    orig_h, orig_w = gt_dict["height"], gt_dict["width"]
                     gt_segmentations = [
                         ann["segmentation"] for ann in gt_dict["annotations"]
                     ]
-                    gt_masks = _polygons_to_binary_masks(gt_segmentations, h, w)
+                    gt_masks = _polygons_to_binary_masks(gt_segmentations, orig_h, orig_w)
+
+                    # Resize GT masks to match pred_masks if dimensions differ
+                    pred_h, pred_w = pred_masks.shape[1], pred_masks.shape[2]
+                    if gt_masks.shape[1] != pred_h or gt_masks.shape[2] != pred_w:
+                        gt_masks = torch.nn.functional.interpolate(
+                            gt_masks.unsqueeze(0),
+                            size=(pred_h, pred_w),
+                            mode="nearest",
+                        ).squeeze(0)
 
                     mean_iou = _greedy_match_iou(gt_masks, pred_masks)
 
