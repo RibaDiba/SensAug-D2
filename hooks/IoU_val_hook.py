@@ -229,7 +229,9 @@ class IoUHook(HookBase):
                     pred_masks = instances.pred_masks.float()  # (N_pred, H, W)
 
                     # Convert GT polygon annotations to binary masks
-                    h, w = inp["image"].shape[1:]
+                    # Use original image dims (not resized tensor dims),
+                    # since Detectron2 resizes pred_masks back to original size.
+                    h, w = inp["height"], inp["width"]
                     gt_segmentations = [
                         ann["segmentation"] for ann in gt_dict["annotations"]
                     ]
