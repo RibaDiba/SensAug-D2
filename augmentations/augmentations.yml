@@ -9,17 +9,17 @@ random_flip:
   vertical: false
 
 gaussian_blur:
-  kernel_size: 5
+  magnitude: 0.1   # [0, 1] -> kernel_size = int(m*49)//2*2+1
 
 gaussian_noise:
-  sigma: 10.0
+  magnitude: 0.2   # [0, 1] -> sigma = 50.0*m
 
 rgb_perturbation:
   channel: 0       # 0=R, 1=G, 2=B
-  alpha: 0.3
+  magnitude: 0.3   # [0, 1] -> alpha
   direction: 1     # 1=lighter, 0=darker
 
 hsv_perturbation:
   channel: 1       # 0=H, 1=S, 2=V
-  alpha: 0.3
+  magnitude: 0.3   # [0, 1] -> alpha
   direction: 0     # 1=lighter, 0=darker
