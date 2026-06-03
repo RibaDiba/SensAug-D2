@@ -93,6 +93,23 @@ def train(config):
 
     job_name = config.pop("JOBNAME", "")
     eval_period = config.pop("EVAL_PERIOD", 100)
+
+    # ── Declare SENSAUG namespace before merge_from_list ──────────────────
+    # Detectron2's CfgNode is strict: keys must be pre-declared or the merge
+    # will raise AssertionError.  We pop the SENSAUG sub-dict, register the
+    # namespace with default values, then overwrite with whatever the caller
+    # passed in.  This keeps the rest of the config dict clean for merge_from_list.
+    from detectron2.config import CfgNode as CN
+    sensaug_cfg = config.pop("SENSAUG", {})
+    cfg.SENSAUG = CN()
+    cfg.SENSAUG.ENABLED           = bool(sensaug_cfg.get("ENABLED",           True))
+    cfg.SENSAUG.EVAL_PERIOD       = int(sensaug_cfg.get("EVAL_PERIOD",        200))
+    cfg.SENSAUG.NUM_PROBE_BATCHES = int(sensaug_cfg.get("NUM_PROBE_BATCHES",  4))
+    cfg.SENSAUG.DIAGNOSTIC_MAG    = float(sensaug_cfg.get("DIAGNOSTIC_MAG",   0.5))
+    cfg.SENSAUG.TEMPERATURE       = float(sensaug_cfg.get("TEMPERATURE",       1.0))
+    cfg.SENSAUG.NONE_WEIGHT       = float(sensaug_cfg.get("NONE_WEIGHT",       0.2))
+    # ──────────────────────────────────────────────────────────────────────
+
     cfg.merge_from_list(flatten_cfg(config))
 
     cfg.JOBNAME = job_name
