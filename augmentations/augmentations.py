@@ -9,6 +9,38 @@ import detectron2.data.transforms as T
 
 AUG_CFG_PATH = Path(__file__).parent / "augmentations.yml"
 
+# Maximum native strengths, mirroring the original SensAug (Zheng et al.).
+# A single ``magnitude`` in [0, 1] is mapped onto each augmentation's native
+# parameter using these caps, exactly as in the upstream implementation.
+MAX_COLOR = 1.0   # RGB/HSV alpha cap
+MAX_BLUR = 49     # max (odd) Gaussian blur kernel size
+MAX_NOISE = 50.0  # max Gaussian noise sigma
+
+
+def _clamp_magnitude(magnitude: float) -> float:
+    """Clamp a magnitude into [0, 1] (mirrors the original's abs()/clip usage)."""
+    return float(np.clip(abs(magnitude), 0.0, 1.0))
+
+
+def blur_kernel_from_magnitude(magnitude: float) -> int:
+    """Map magnitude in [0, 1] to an odd cv2 Gaussian-blur kernel size.
+
+    Mirrors the original ``Blur`` transform:
+        kernel_size = int(magnitude * 49) // 2 * 2 + 1
+    """
+    m = _clamp_magnitude(magnitude)
+    return int(m * MAX_BLUR) // 2 * 2 + 1
+
+
+def noise_sigma_from_magnitude(magnitude: float) -> float:
+    """Map magnitude in [0, 1] to a Gaussian-noise sigma (mirrors original ``Noise``)."""
+    return MAX_NOISE * _clamp_magnitude(magnitude)
+
+
+def color_alpha_from_magnitude(magnitude: float) -> float:
+    """Map magnitude in [0, 1] to an RGB/HSV perturbation alpha (mirrors ``MAX_COLOR``)."""
+    return _clamp_magnitude(magnitude) * MAX_COLOR
+
 
 class GaussianBlurTransform(Transform):
     def __init__(self, kernel_size: int):
@@ -93,6 +125,10 @@ class HSVPerturbationTransform(Transform):
         max_val = 180.0 if self.channel == 0 else 255.0
         if self.direction == 1:
             ch = ch + self.alpha * (max_val - ch)
+        elif self.channel == 2:
+            # V-darker special case (mirrors original): keep a small floor so
+            # the value channel never collapses fully to black.
+            ch = ch * (1.0 - self.alpha) + 10.0 * self.alpha
         else:
             ch = ch * (1.0 - self.alpha)
         hsv[:, :, self.channel] = np.clip(ch, 0, max_val)
@@ -108,26 +144,36 @@ class HSVPerturbationTransform(Transform):
 # --- Detectron2 Augmentation wrappers ---
 
 class GaussianBlurPerturbation(Augmentation):
-    """Apply Gaussian blur with a given kernel size."""
+    """Apply Gaussian blur whose strength is set by a magnitude in [0, 1].
 
-    def __init__(self, kernel_size: int = 5):
+    Args:
+        magnitude: perturbation strength in [0, 1]; mapped to an odd cv2 kernel
+            size via ``blur_kernel_from_magnitude``.
+    """
+
+    def __init__(self, magnitude: float = 0.1):
         super().__init__()
         self._init(locals())
 
     def get_transform(self, image: np.ndarray) -> Transform:
-        return GaussianBlurTransform(self.kernel_size)
+        return GaussianBlurTransform(blur_kernel_from_magnitude(self.magnitude))
 
 
 class GaussianNoisePerturbation(Augmentation):
-    """Add Gaussian noise with a given sigma."""
+    """Add Gaussian noise whose strength is set by a magnitude in [0, 1].
 
-    def __init__(self, sigma: float = 10.0):
+    Args:
+        magnitude: perturbation strength in [0, 1]; mapped to sigma via
+            ``noise_sigma_from_magnitude``.
+    """
+
+    def __init__(self, magnitude: float = 0.2):
         super().__init__()
         self._init(locals())
         self._rng = np.random.default_rng()
 
     def get_transform(self, image: np.ndarray) -> Transform:
-        return GaussianNoiseTransform(self.sigma, self._rng)
+        return GaussianNoiseTransform(noise_sigma_from_magnitude(self.magnitude), self._rng)
 
 
 class RGBPerturbation(Augmentation):
@@ -135,16 +181,19 @@ class RGBPerturbation(Augmentation):
 
     Args:
         channel: 0=R, 1=G, 2=B
-        alpha: perturbation strength in [0, 1]
+        magnitude: perturbation strength in [0, 1]; mapped to alpha via
+            ``color_alpha_from_magnitude``.
         direction: 1=lighter, 0=darker
     """
 
-    def __init__(self, channel: int = 0, alpha: float = 0.5, direction: int = 1):
+    def __init__(self, channel: int = 0, magnitude: float = 0.3, direction: int = 1):
         super().__init__()
         self._init(locals())
 
     def get_transform(self, image: np.ndarray) -> Transform:
-        return RGBPerturbationTransform(self.channel, self.alpha, self.direction)
+        return RGBPerturbationTransform(
+            self.channel, color_alpha_from_magnitude(self.magnitude), self.direction
+        )
 
 
 class HSVPerturbation(Augmentation):
@@ -152,16 +201,19 @@ class HSVPerturbation(Augmentation):
 
     Args:
         channel: 0=H, 1=S, 2=V
-        alpha: perturbation strength in [0, 1]
+        magnitude: perturbation strength in [0, 1]; mapped to alpha via
+            ``color_alpha_from_magnitude``.
         direction: 1=lighter, 0=darker
     """
 
-    def __init__(self, channel: int = 0, alpha: float = 0.5, direction: int = 1):
+    def __init__(self, channel: int = 0, magnitude: float = 0.3, direction: int = 1):
         super().__init__()
         self._init(locals())
 
     def get_transform(self, image: np.ndarray) -> Transform:
-        return HSVPerturbationTransform(self.channel, self.alpha, self.direction)
+        return HSVPerturbationTransform(
+            self.channel, color_alpha_from_magnitude(self.magnitude), self.direction
+        )
 
 
 def build_augmentations(cfg_path: str = None) -> List[Augmentation]:
@@ -188,8 +240,8 @@ def build_augmentations(cfg_path: str = None) -> List[Augmentation]:
     return [
         T.ResizeShortestEdge(resize["min_size"], resize["max_size"], resize["sample_style"]),
         T.RandomFlip(prob=flip["prob"], horizontal=flip["horizontal"], vertical=flip["vertical"]),
-        GaussianBlurPerturbation(kernel_size=blur["kernel_size"]),
-        GaussianNoisePerturbation(sigma=noise["sigma"]),
-        RGBPerturbation(channel=rgb["channel"], alpha=rgb["alpha"], direction=rgb["direction"]),
-        HSVPerturbation(channel=hsv["channel"], alpha=hsv["alpha"], direction=hsv["direction"]),
+        GaussianBlurPerturbation(magnitude=blur["magnitude"]),
+        GaussianNoisePerturbation(magnitude=noise["magnitude"]),
+        RGBPerturbation(channel=rgb["channel"], magnitude=rgb["magnitude"], direction=rgb["direction"]),
+        HSVPerturbation(channel=hsv["channel"], magnitude=hsv["magnitude"], direction=hsv["direction"]),
     ]
