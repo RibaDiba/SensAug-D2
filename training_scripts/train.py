@@ -98,7 +98,10 @@ def train(config):
     cfg.JOBNAME = job_name
     cfg.EVAL_PERIOD = eval_period
     dir_name = job_name if job_name else Path(base_model).stem
-    cfg.OUTPUT_DIR = str(project_root / "models" / dir_name)
+    if cfg.OUTPUT_DIR:
+        cfg.OUTPUT_DIR = str(Path(cfg.OUTPUT_DIR) / dir_name)
+    else:
+        cfg.OUTPUT_DIR = str(project_root / "models" / dir_name)
     os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
 
 
