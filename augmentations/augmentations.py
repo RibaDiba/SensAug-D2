@@ -216,7 +216,43 @@ class HSVPerturbation(Augmentation):
         )
 
 
+
+# ---------------------------------------------------------------------------
+# Perturbation registry
+# ---------------------------------------------------------------------------
+# Maps a short name → Augmentation class.  Matches the ``NEW_PERTURBATIONS``
+# dict from the original SensAug repository so that hooks and mappers can look
+# up classes by name.  Each class must accept a single ``magnitude`` kwarg in
+# [0, 1].
+PERTURBATION_REGISTRY: dict = {
+    # Gaussian blur / noise
+    "blur":  GaussianBlurPerturbation,
+    "noise": GaussianNoisePerturbation,
+    # RGB channel perturbations  (channel 0=R, 1=G, 2=B in OpenCV BGR images)
+    "lighter_R": lambda magnitude: RGBPerturbation(channel=2, magnitude=magnitude, direction=1),
+    "darker_R":  lambda magnitude: RGBPerturbation(channel=2, magnitude=magnitude, direction=0),
+    "lighter_G": lambda magnitude: RGBPerturbation(channel=1, magnitude=magnitude, direction=1),
+    "darker_G":  lambda magnitude: RGBPerturbation(channel=1, magnitude=magnitude, direction=0),
+    "lighter_B": lambda magnitude: RGBPerturbation(channel=0, magnitude=magnitude, direction=1),
+    "darker_B":  lambda magnitude: RGBPerturbation(channel=0, magnitude=magnitude, direction=0),
+    # HSV channel perturbations  (channel 0=H, 1=S, 2=V)
+    "lighter_H": lambda magnitude: HSVPerturbation(channel=0, magnitude=magnitude, direction=1),
+    "darker_H":  lambda magnitude: HSVPerturbation(channel=0, magnitude=magnitude, direction=0),
+    "lighter_S": lambda magnitude: HSVPerturbation(channel=1, magnitude=magnitude, direction=1),
+    "darker_S":  lambda magnitude: HSVPerturbation(channel=1, magnitude=magnitude, direction=0),
+    "lighter_V": lambda magnitude: HSVPerturbation(channel=2, magnitude=magnitude, direction=1),
+    "darker_V":  lambda magnitude: HSVPerturbation(channel=2, magnitude=magnitude, direction=0),
+}
+
+# Names that each accept a ``magnitude`` kwarg — the lambdas above act as
+# factory callables so the registry is uniform: ``PERTURBATION_REGISTRY[name](magnitude=m)``.
+# For the two direct classes we wrap them the same way for consistency.
+PERTURBATION_REGISTRY["blur"]  = lambda magnitude: GaussianBlurPerturbation(magnitude=magnitude)
+PERTURBATION_REGISTRY["noise"] = lambda magnitude: GaussianNoisePerturbation(magnitude=magnitude)
+
+
 def build_augmentations(cfg_path: str = None) -> List[Augmentation]:
+
     """Build the augmentation list from the YAML config.
 
     Args:

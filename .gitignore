@@ -3,3 +3,8 @@ data/
 .claude/
 
 CLAUDE.md
+
+# caches
+__pycache__/
+*.py[cod]
+.pytest_cache/

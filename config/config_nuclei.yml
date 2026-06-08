@@ -12,9 +12,11 @@ MODEL:
     SCORE_THRESH_TEST: 0.3
     NMS_THRESH_TEST: 0.3
 
+# BBBC038 nuclei splits, registered by register_nuclei() under isolated names so they
+# never collide with the tumor pipeline's my_dataset_* registration.
 DATASETS:
-  TRAIN: ["my_dataset_train"]
-  TEST: ["my_dataset_test", "my_dataset_val"]
+  TRAIN: ["nuclei_dsb2018_train"]
+  TEST: ["nuclei_dsb2018_test", "nuclei_dsb2018_val"]
 
 DATALOADER:
   NUM_WORKERS: 1
@@ -39,6 +41,6 @@ SENSAUG:
   ALPHA_GRID_SIZE: 11       # diagnostic magnitudes swept in [0, 1]
   LAMBDA: 0.05              # regularizer in g(alpha)
   NONE_PROB: 0.2            # prob. of skipping augmentation after warmup
-  VAL_DATASET: "my_dataset_val"
+  VAL_DATASET: "nuclei_dsb2018_val"
   MAX_SA_IMAGES: 200        # cap on validation images per SA pass (compute control)
   KID_SUBSET_SIZE: 50       # torchmetrics KID subset size (clamped to image count)
