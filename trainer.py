@@ -3,12 +3,12 @@
 This trainer wires together three components:
 
 1.  :class:`~augmentations.adaptive_mapper.AdaptiveDatasetMapper` — a dataset
-    mapper that samples one perturbation per image from a shared probability
-    distribution (:class:`~augmentations.adaptive_mapper.AugmentationWeights`).
+    mapper that samples one perturbation (and its magnitude) per image from a
+    shared :class:`~augmentations.adaptive_mapper.AugmentationPolicy`.
 
 2.  :class:`~hooks.sens_aug_hook.SensAugHook` — a training hook that runs a
-    sensitivity analysis pass every ``SENSAUG.EVAL_PERIOD`` iterations, computes
-    per-perturbation loss sensitivity scores, and updates the shared weight dict.
+    sensitivity-analysis pass every ``SENSAUG.SA_PERIOD`` iterations and rewrites
+    the shared policy's per-augmentation intensity levels and sampling weights.
 
 3.  The existing diagnostic hooks (:class:`~hooks.IoU_val_hook.IoUHook`,
     :class:`~hooks.AP_val_hook.APVisualizationHook`,
@@ -16,12 +16,16 @@ This trainer wires together three components:
 
 SensAug config keys (set via ``cfg.SENSAUG.*``)
 -----------------------------------------------
-SENSAUG.EVAL_PERIOD       int   Sensitivity analysis cadence (default 500).
-SENSAUG.NUM_PROBE_BATCHES int   Probe batches per analysis pass (default 4).
-SENSAUG.DIAGNOSTIC_MAG    float Fixed magnitude for the probe pass (default 0.5).
-SENSAUG.TEMPERATURE       float Softmax temperature for weight conversion (default 1.0).
-SENSAUG.NONE_WEIGHT       float Weight of "skip augmentation" bucket (default 0.2).
-SENSAUG.ENABLED           bool  If False, fall back to the static augmentations.
+SENSAUG.ENABLED         bool  If False, fall back to the static augmentations.
+SENSAUG.WARMUP_ITERS    int   Clean-training iterations before the first SA pass.
+SENSAUG.SA_PERIOD       int   Iterations between sensitivity-analysis passes.
+SENSAUG.NUM_LEVELS      int   Sensitive intensity levels per augmentation (L).
+SENSAUG.ALPHA_GRID_SIZE int   Diagnostic magnitudes swept in [0, 1].
+SENSAUG.LAMBDA          float Regularizer lambda in g(alpha).
+SENSAUG.NONE_PROB       float Probability of skipping augmentation after warmup.
+SENSAUG.VAL_DATASET     str   Registered validation dataset to run SA on.
+SENSAUG.MAX_SA_IMAGES   int   Cap on validation images per SA pass.
+SENSAUG.KID_SUBSET_SIZE int   torchmetrics KID subset size (clamped to image count).
 
 All keys default gracefully if not present in the cfg node.
 """
@@ -33,7 +37,7 @@ import logging
 from detectron2.data import build_detection_train_loader
 from detectron2.engine import DefaultTrainer
 
-from augmentations.adaptive_mapper import AdaptiveDatasetMapper, AugmentationWeights
+from augmentations.adaptive_mapper import AdaptiveDatasetMapper, AugmentationPolicy
 from augmentations.augmentations import PERTURBATION_REGISTRY, build_augmentations
 from hooks.IoU_val_hook import IoUHook
 from hooks.AP_val_hook import APVisualizationHook
@@ -52,24 +56,43 @@ class Trainer(DefaultTrainer):
     during training.
     """
 
-    # Shared weight container — created once per Trainer instance and referenced
-    # by both the mapper (built in build_train_loader) and the hook (registered
-    # in build_hooks).  Using a class-level slot keeps them in sync even if
-    # build_train_loader and build_hooks are called at different times.
-    _aug_weights: AugmentationWeights | None = None
+    # Shared augmentation policy — created once per Trainer instance and
+    # referenced by both the mapper (built in build_train_loader) and the hook
+    # (registered in build_hooks).  Using a class-level slot keeps them in sync
+    # even if build_train_loader and build_hooks are called at different times.
+    _policy: AugmentationPolicy | None = None
 
     @classmethod
     def _get_sensaug_cfg(cls, cfg):
         """Safely extract SensAug-specific config values with defaults."""
         sensaug = getattr(cfg, "SENSAUG", None)
         return {
-            "enabled":          getattr(sensaug, "ENABLED",           True),
-            "eval_period":      getattr(sensaug, "EVAL_PERIOD",        200),
-            "num_probe_batches": getattr(sensaug, "NUM_PROBE_BATCHES", 4),
-            "diagnostic_mag":   getattr(sensaug, "DIAGNOSTIC_MAG",    0.5),
-            "temperature":      getattr(sensaug, "TEMPERATURE",        1.0),
-            "none_weight":      getattr(sensaug, "NONE_WEIGHT",        0.2),
+            "enabled":         getattr(sensaug, "ENABLED",         True),
+            "warmup_iters":    getattr(sensaug, "WARMUP_ITERS",    1000),
+            "sa_period":       getattr(sensaug, "SA_PERIOD",       1500),
+            "num_levels":      getattr(sensaug, "NUM_LEVELS",      5),
+            "alpha_grid_size": getattr(sensaug, "ALPHA_GRID_SIZE", 11),
+            "lam":             getattr(sensaug, "LAMBDA",          0.05),
+            "none_prob":       getattr(sensaug, "NONE_PROB",       0.2),
+            "val_dataset":     getattr(sensaug, "VAL_DATASET",     ""),
+            "max_sa_images":   getattr(sensaug, "MAX_SA_IMAGES",   200),
+            "kid_subset_size": getattr(sensaug, "KID_SUBSET_SIZE", 50),
         }
+
+    @classmethod
+    def _ensure_policy(cls, sa_cfg) -> AugmentationPolicy:
+        """Create the shared policy once, starting clean (none_prob = 1.0)."""
+        if cls._policy is None:
+            cls._policy = AugmentationPolicy(
+                perturbation_names=list(PERTURBATION_REGISTRY.keys()),
+                num_levels=sa_cfg["num_levels"],
+                none_prob=1.0,  # clean warmup until the first SA pass
+            )
+            logger.info(
+                "[Trainer] Created AugmentationPolicy: %d perturbations, L=%d levels.",
+                len(PERTURBATION_REGISTRY), sa_cfg["num_levels"],
+            )
+        return cls._policy
 
     @classmethod
     def build_train_loader(cls, cfg):
@@ -82,19 +105,8 @@ class Trainer(DefaultTrainer):
             mapper = DatasetMapper(cfg, is_train=True, augmentations=augs)
             return build_detection_train_loader(cfg, mapper=mapper)
 
-        # Build (or reuse) the shared weight object.
-        if cls._aug_weights is None:
-            cls._aug_weights = AugmentationWeights(
-                perturbation_names=list(PERTURBATION_REGISTRY.keys()),
-                none_weight=sa_cfg["none_weight"],
-                initial_weight=1.0,
-            )
-            logger.info(
-                "[Trainer] Created AugmentationWeights with %d perturbations + 'none'.",
-                len(PERTURBATION_REGISTRY),
-            )
-
-        mapper = AdaptiveDatasetMapper(cfg, aug_weights=cls._aug_weights)
+        policy = cls._ensure_policy(sa_cfg)
+        mapper = AdaptiveDatasetMapper(cfg, policy=policy)
         return build_detection_train_loader(cfg, mapper=mapper)
 
     def build_hooks(self):
@@ -129,35 +141,36 @@ class Trainer(DefaultTrainer):
 
         # ---- SensAugHook (only when adaptive augmentation is enabled) ----
         if sa_cfg["enabled"]:
-            if self.__class__._aug_weights is None:
-                # build_train_loader wasn't called before build_hooks — create weights now.
-                self.__class__._aug_weights = AugmentationWeights(
-                    perturbation_names=list(PERTURBATION_REGISTRY.keys()),
-                    none_weight=sa_cfg["none_weight"],
-                    initial_weight=1.0,
-                )
+            policy = self.__class__._ensure_policy(sa_cfg)
 
-            # Reuse the training dataloader as the probe loader.
-            # A small, frozen held-out subset would be more rigorous but this
-            # is a lightweight default that avoids extra setup.
-            probe_loader = self.data_loader
+            # Validation split to run sensitivity analysis on.  Falls back to the
+            # configured val split (DATASETS.TEST[1], as used by the diagnostic
+            # hooks) when SENSAUG.VAL_DATASET is left empty.
+            val_dataset = sa_cfg["val_dataset"]
+            if not val_dataset:
+                test_sets = cfg.DATASETS.TEST
+                val_dataset = test_sets[1] if len(test_sets) > 1 else test_sets[0]
 
             hooks.append(
                 SensAugHook(
-                    aug_weights=self.__class__._aug_weights,
-                    probe_loader=probe_loader,
-                    eval_period=sa_cfg["eval_period"],
-                    num_probe_batches=sa_cfg["num_probe_batches"],
-                    diagnostic_magnitude=sa_cfg["diagnostic_mag"],
-                    temperature=sa_cfg["temperature"],
-                    none_weight=sa_cfg["none_weight"],
+                    policy=policy,
+                    val_dataset=val_dataset,
+                    warmup_iters=sa_cfg["warmup_iters"],
+                    sa_period=sa_cfg["sa_period"],
+                    num_levels=sa_cfg["num_levels"],
+                    alpha_grid_size=sa_cfg["alpha_grid_size"],
+                    lam=sa_cfg["lam"],
+                    none_prob=sa_cfg["none_prob"],
+                    max_sa_images=sa_cfg["max_sa_images"],
+                    kid_subset_size=sa_cfg["kid_subset_size"],
                     output_dir=output_dir,
                     job_name=job_name,
                 )
             )
             logger.info(
-                "[Trainer] Registered SensAugHook — analysis every %d iterations.",
-                sa_cfg["eval_period"],
+                "[Trainer] Registered SensAugHook — warmup=%d, SA every %d iters, "
+                "val='%s'.",
+                sa_cfg["warmup_iters"], sa_cfg["sa_period"], val_dataset,
             )
         else:
             logger.info("[Trainer] SensAug disabled (SENSAUG.ENABLED=False).")

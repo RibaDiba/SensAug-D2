@@ -21,8 +21,9 @@ from detectron2.utils.visualizer import Visualizer, ColorMode
 from detectron2.data.datasets import register_coco_instances
 from detectron2.data import MetadataCatalog, DatasetCatalog
 
-# custom trainer with hooks 
+# custom trainers
 from trainer import Trainer
+from baseline_trainer import BaselineTrainer
 
 def flatten_cfg(d, prefix=""):
     """
@@ -73,10 +74,25 @@ def parse_args():
     parser.add_argument("--base_model", type=str, default=None, help="Override BASE_MODEL")
     parser.add_argument("--jobname", type=str, default=None, help="Override JOBNAME (used in hook outputs)")
     parser.add_argument("--eval_period", type=int, default=None, help="Override EVAL_PERIOD (IoU eval frequency)")
+    parser.add_argument(
+        "--mode",
+        choices=["sensaug", "baseline"],
+        required=True,
+        help="sensaug = sensitivity-informed adaptive aug (SensAugHook); "
+             "baseline = static augmentations, no sensitivity analysis",
+    )
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        required=True,
+        help="Path to the COCO dataset root containing train/, val/, test/ subdirs "
+             "(each with <split>.json + images). Splits are registered as "
+             "my_dataset_{train,val,test}.",
+    )
     return parser.parse_args()
 
 
-def train(config):
+def train(config, mode):
 
     train_metadata = MetadataCatalog.get(config["DATASETS"]["TRAIN"][0])
     train_dataset_dicts = DatasetCatalog.get(config["DATASETS"]["TRAIN"][0])
@@ -102,12 +118,16 @@ def train(config):
     from detectron2.config import CfgNode as CN
     sensaug_cfg = config.pop("SENSAUG", {})
     cfg.SENSAUG = CN()
-    cfg.SENSAUG.ENABLED           = bool(sensaug_cfg.get("ENABLED",           True))
-    cfg.SENSAUG.EVAL_PERIOD       = int(sensaug_cfg.get("EVAL_PERIOD",        200))
-    cfg.SENSAUG.NUM_PROBE_BATCHES = int(sensaug_cfg.get("NUM_PROBE_BATCHES",  4))
-    cfg.SENSAUG.DIAGNOSTIC_MAG    = float(sensaug_cfg.get("DIAGNOSTIC_MAG",   0.5))
-    cfg.SENSAUG.TEMPERATURE       = float(sensaug_cfg.get("TEMPERATURE",       1.0))
-    cfg.SENSAUG.NONE_WEIGHT       = float(sensaug_cfg.get("NONE_WEIGHT",       0.2))
+    cfg.SENSAUG.ENABLED         = bool(sensaug_cfg.get("ENABLED",          True))
+    cfg.SENSAUG.WARMUP_ITERS    = int(sensaug_cfg.get("WARMUP_ITERS",      1000))
+    cfg.SENSAUG.SA_PERIOD       = int(sensaug_cfg.get("SA_PERIOD",         1500))
+    cfg.SENSAUG.NUM_LEVELS      = int(sensaug_cfg.get("NUM_LEVELS",        5))
+    cfg.SENSAUG.ALPHA_GRID_SIZE = int(sensaug_cfg.get("ALPHA_GRID_SIZE",   11))
+    cfg.SENSAUG.LAMBDA          = float(sensaug_cfg.get("LAMBDA",          0.05))
+    cfg.SENSAUG.NONE_PROB       = float(sensaug_cfg.get("NONE_PROB",       0.2))
+    cfg.SENSAUG.VAL_DATASET     = str(sensaug_cfg.get("VAL_DATASET",       ""))
+    cfg.SENSAUG.MAX_SA_IMAGES   = int(sensaug_cfg.get("MAX_SA_IMAGES",     200))
+    cfg.SENSAUG.KID_SUBSET_SIZE = int(sensaug_cfg.get("KID_SUBSET_SIZE",   50))
     # ──────────────────────────────────────────────────────────────────────
 
     cfg.merge_from_list(flatten_cfg(config))
@@ -122,7 +142,8 @@ def train(config):
     os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
 
 
-    trainer = Trainer(cfg)
+    trainer_cls = Trainer if mode == "sensaug" else BaselineTrainer
+    trainer = trainer_cls(cfg)
     trainer.resume_or_load(resume=False)
     trainer.train()
 
@@ -139,4 +160,5 @@ if __name__ == "__main__":
         config["JOBNAME"] = args.jobname
     if args.eval_period is not None:
         config["EVAL_PERIOD"] = args.eval_period
-    train(config)
+    register_instances(args.dataset)
+    train(config, args.mode)
