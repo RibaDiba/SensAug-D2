@@ -5,6 +5,8 @@ opencv-python
 matplotlib
 numpy
 scipy
+torchmetrics
+torch-fidelity
 tqdm
 pillow
 datasets
