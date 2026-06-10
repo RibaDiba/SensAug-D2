@@ -15,6 +15,7 @@ MODEL:
 DATASETS:
   TRAIN: ["my_dataset_train"]
   TEST: ["my_dataset_test", "my_dataset_val"]
+  AUGMENTATION: true
 
 DATALOADER:
   NUM_WORKERS: 1

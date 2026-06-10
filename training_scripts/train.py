@@ -25,7 +25,6 @@ if str(REPO_ROOT) not in sys.path:
 
 # custom trainers
 from trainer import Trainer
-from baseline_trainer import BaselineTrainer
 
 def flatten_cfg(d, prefix=""):
     """
@@ -74,6 +73,7 @@ def parse_args():
     )
     parser.add_argument("--num_iterations", type=int, default=None, help="Override SOLVER.MAX_ITER")
     parser.add_argument("--base_model", type=str, default=None, help="Override BASE_MODEL")
+    parser.add_argument("--no-augs", action="store_true", help="Disable all live augmentations during training")
     parser.add_argument("--jobname", type=str, default=None, help="Override JOBNAME (used in hook outputs)")
     parser.add_argument("--eval_period", type=int, default=None, help="Override EVAL_PERIOD (IoU eval frequency)")
     parser.add_argument(
@@ -114,6 +114,9 @@ def train(config, mode):
     # MODELTYPE is metadata for our pipeline, not a detectron2 cfg key; drop it
     # so it isn't passed to the strict merge_from_list below.
     config.pop("MODELTYPE", None)
+    # DATASETS.AUGMENTATION is not a native Detectron2 cfg key; pop it before
+    # the strict merge_from_list, then set it as a plain attribute afterward.
+    augmentation_enabled = bool(config.get("DATASETS", {}).pop("AUGMENTATION", True))
 
     # ── Declare SENSAUG namespace before merge_from_list ──────────────────
     # Detectron2's CfgNode is strict: keys must be pre-declared or the merge
@@ -139,6 +142,7 @@ def train(config, mode):
 
     cfg.JOBNAME = job_name
     cfg.EVAL_PERIOD = eval_period
+    cfg.DATASETS.AUGMENTATION = augmentation_enabled
     dir_name = job_name if job_name else Path(base_model).stem
     if cfg.OUTPUT_DIR:
         cfg.OUTPUT_DIR = str(Path(cfg.OUTPUT_DIR) / dir_name)
@@ -147,7 +151,7 @@ def train(config, mode):
     os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
 
 
-    trainer_cls = Trainer if mode == "sensaug" else BaselineTrainer
+    trainer_cls = Trainer
     trainer = trainer_cls(cfg)
     trainer.resume_or_load(resume=False)
     trainer.train()
@@ -165,5 +169,7 @@ if __name__ == "__main__":
         config["JOBNAME"] = args.jobname
     if args.eval_period is not None:
         config["EVAL_PERIOD"] = args.eval_period
+    if args.no_augs:
+        config.setdefault("DATASETS", {})["AUGMENTATION"] = False
     register_instances(args.dataset)
     train(config, args.mode)

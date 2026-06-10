@@ -43,6 +43,7 @@ from hooks.IoU_val_hook import IoUHook
 from hooks.AP_val_hook import APVisualizationHook
 from hooks.loss_hook import TrainingLossHook
 from hooks.sens_aug_hook import SensAugHook
+from hooks.ap_iou_final_results_hook import AP_IOU_FinalResults
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,13 @@ class Trainer(DefaultTrainer):
     def build_train_loader(cls, cfg):
         sa_cfg = cls._get_sensaug_cfg(cfg)
 
+        # Global augmentation kill-switch (DATASETS.AUGMENTATION=False disables ALL
+        # live augmentation — static and SensAug adaptive alike).
+        if not getattr(cfg.DATASETS, "AUGMENTATION", True):
+            from detectron2.data import DatasetMapper
+            mapper = DatasetMapper(cfg, is_train=True, augmentations=[])
+            return build_detection_train_loader(cfg, mapper=mapper)
+
         if not sa_cfg["enabled"]:
             # Fall back to static augmentations when SensAug is disabled.
             from detectron2.data import DatasetMapper
@@ -138,6 +146,13 @@ class Trainer(DefaultTrainer):
                 job_name=job_name,
             )
         )
+        hooks.append(
+            AP_IOU_FinalResults(
+                output_dir=output_dir,
+                cfg=cfg,
+            )
+        )
+
 
         # ---- SensAugHook (only when adaptive augmentation is enabled) ----
         if sa_cfg["enabled"]:

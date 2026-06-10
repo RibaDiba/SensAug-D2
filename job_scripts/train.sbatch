@@ -19,16 +19,16 @@ MODE="sensaug"                 # sensaug | baseline
 ITER=10000
 REPO_ROOT="/projects/PUCHALLA/LLP2024/SensAug-D2"
 DATASET="${REPO_ROOT}/data/coco_test"      # COCO root with train/ val/ test/
-CONFIG="${REPO_ROOT}/config/config_nuclei.yml"
+CONFIG="${REPO_ROOT}/config/config.yml"
 
 # create a logs dir (must match the --output/--error path above)
 mkdir -p ./logs/${NAME}
 
 
 
-python ${REPO_ROOT}/training_scripts/train_nuclei.py \
+python ${REPO_ROOT}/training_scripts/train.py \
     --config ${CONFIG} \
     --mode ${MODE} \
-    --dataset_root ${DATASET} \
+    --dataset ${DATASET} \
     --jobname ${NAME} \
     --num_iterations ${ITER}

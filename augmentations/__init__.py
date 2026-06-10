@@ -3,5 +3,6 @@ from .augmentations import (
     GaussianNoisePerturbation,
     RGBPerturbation,
     HSVPerturbation,
+    UniformPerturbation,
     build_augmentations,
 )

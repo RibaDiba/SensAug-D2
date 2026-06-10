@@ -216,7 +216,6 @@ class HSVPerturbation(Augmentation):
         )
 
 
-
 # ---------------------------------------------------------------------------
 # Perturbation registry
 # ---------------------------------------------------------------------------
@@ -251,6 +250,33 @@ PERTURBATION_REGISTRY["blur"]  = lambda magnitude: GaussianBlurPerturbation(magn
 PERTURBATION_REGISTRY["noise"] = lambda magnitude: GaussianNoisePerturbation(magnitude=magnitude)
 
 
+class UniformPerturbation(Augmentation):
+    """Sample one corruption uniformly from PERTURBATION_REGISTRY and apply it.
+
+    Each image draws a corruption name uniformly over all registry entries and a
+    magnitude uniformly in [0, 1]. This is the non-adaptive uniform baseline:
+    one perturbation per image, always applied (mirroring the original SensAug's
+    training procedure, which has no skip/"none" probability after warmup).
+
+    Args:
+        names: Subset of perturbation names to sample from. Defaults to every key
+            in :data:`PERTURBATION_REGISTRY`.
+    """
+
+    def __init__(self, names: Optional[List[str]] = None):
+        super().__init__()
+        names = list(names) if names else list(PERTURBATION_REGISTRY.keys())
+        self._init(locals())
+
+    def get_transform(self, image: np.ndarray) -> Transform:
+        # Use the global np.random so Detectron2's per-worker seeding applies,
+        # matching AugmentationPolicy.sample() in adaptive_mapper.py.
+        name = self.names[np.random.randint(len(self.names))]
+        magnitude = float(np.random.uniform(0.0, 1.0))
+        aug = PERTURBATION_REGISTRY[name](magnitude=magnitude)
+        return aug.get_transform(image)
+
+
 def build_augmentations(cfg_path: str = None) -> List[Augmentation]:
 
     """Build the augmentation list from the YAML config.
@@ -268,16 +294,12 @@ def build_augmentations(cfg_path: str = None) -> List[Augmentation]:
 
     resize = aug_cfg["resize"]
     flip = aug_cfg["random_flip"]
-    blur = aug_cfg["gaussian_blur"]
-    noise = aug_cfg["gaussian_noise"]
-    rgb = aug_cfg["rgb_perturbation"]
-    hsv = aug_cfg["hsv_perturbation"]
 
+    # Geometric augs always apply; corruptions are sampled uniformly — one per
+    # image, random type and magnitude — via UniformPerturbation. (The per-
+    # corruption magnitudes in the YAML are no longer read here.)
     return [
         T.ResizeShortestEdge(resize["min_size"], resize["max_size"], resize["sample_style"]),
         T.RandomFlip(prob=flip["prob"], horizontal=flip["horizontal"], vertical=flip["vertical"]),
-        GaussianBlurPerturbation(magnitude=blur["magnitude"]),
-        GaussianNoisePerturbation(magnitude=noise["magnitude"]),
-        RGBPerturbation(channel=rgb["channel"], magnitude=rgb["magnitude"], direction=rgb["direction"]),
-        HSVPerturbation(channel=hsv["channel"], magnitude=hsv["magnitude"], direction=hsv["direction"]),
+        UniformPerturbation(),
     ]
