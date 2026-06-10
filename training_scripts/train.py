@@ -79,7 +79,7 @@ def parse_args():
     parser.add_argument(
         "--mode",
         choices=["sensaug", "baseline"],
-        required=True,
+        default="sensaug",
         help="sensaug = sensitivity-informed adaptive aug (SensAugHook); "
              "baseline = static augmentations, no sensitivity analysis",
     )

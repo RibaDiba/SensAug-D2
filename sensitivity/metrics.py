@@ -92,7 +92,7 @@ def evaluate_aug_alpha(
     """
     image_format = cfg.INPUT.FORMAT
     resize = T.ResizeShortestEdge(
-        [cfg.INPUT.MIN_SIZE_TEST], cfg.INPUT.MAX_SIZE_TEST
+        [cfg.INPUT.MIN_SIZE_TEST], cfg.INPUT.MAX_SIZE_TEST, "choice"
     )
     device = next(model.parameters()).device
 

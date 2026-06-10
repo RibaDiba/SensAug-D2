@@ -15,7 +15,7 @@ MODEL:
 DATASETS:
   TRAIN: ["my_dataset_train"]
   TEST: ["my_dataset_test", "my_dataset_val"]
-  AUGMENTATION: true
+  AUGMENTATION: false
 
 DATALOADER:
   NUM_WORKERS: 1
@@ -33,7 +33,7 @@ SOLVER:
 OUTPUT_DIR: "model_output/"
 
 SENSAUG:
-  ENABLED: true
+  ENABLED: false
   WARMUP_ITERS: 1000        # clean-training iterations before the first SA pass
   SA_PERIOD: 1500           # iterations between sensitivity-analysis passes
   NUM_LEVELS: 5             # L sensitive intensity levels per augmentation
