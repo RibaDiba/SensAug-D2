@@ -36,7 +36,7 @@ OUTPUT_DIR: "model_output/"
 SENSAUG:
   ENABLED: true
   WARMUP_ITERS: 1000        # clean-training iterations before the first SA pass
-  SA_PERIOD: 1500           # iterations between sensitivity-analysis passes
+  SA_PERIOD: 500           # iterations between sensitivity-analysis passes
   NUM_LEVELS: 5             # L sensitive intensity levels per augmentation
   ALPHA_GRID_SIZE: 11       # diagnostic magnitudes swept in [0, 1]
   LAMBDA: 0.05              # regularizer in g(alpha)
