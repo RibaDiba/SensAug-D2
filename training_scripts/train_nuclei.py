@@ -11,14 +11,19 @@ dataset — the two pipelines stay disjoint.
 
 Usage (run from the repo root):
     python -m training_scripts.train_nuclei \
-        --dataset_root data/bbbc038/coco \
+        --dataset_root data/coco_test \
         --mode baseline
 """
 
 import argparse
+import sys
 from pathlib import Path
 
 import yaml
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from training_scripts.train import train
 from register_nuclei import register_nuclei
@@ -33,8 +38,8 @@ def parse_args():
         help="Path to the YAML config file (defaults to config/config_nuclei.yml).",
     )
     parser.add_argument("--dataset_root", type=str, required=True,
-                        help="BBBC038 COCO root from bbbc038_to_coco.py "
-                             "(holds {train,val,test}/<split>.json + images).")
+                        help="COCO root holding {train,val,test}/<split>.json + images. "
+                            "In this workspace, data/coco_test matches that layout.")
     parser.add_argument("--num_iterations", type=int, default=None, help="Override SOLVER.MAX_ITER")
     parser.add_argument("--base_model", type=str, default=None, help="Override BASE_MODEL")
     parser.add_argument("--jobname", type=str, default=None, help="Override JOBNAME (used in hook outputs)")

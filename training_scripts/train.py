@@ -1,14 +1,12 @@
 import argparse
+import sys
+from pathlib import Path
 import yaml
-
-# imports
 import detectron2
 from detectron2.utils.logger import setup_logger
 
 setup_logger()
 
-# import some common libraries
-from pathlib import Path
 import numpy as np
 import os, json, cv2, random, importlib, sys, argparse
 import matplotlib.pyplot as plt
@@ -20,6 +18,10 @@ from detectron2.config import get_cfg
 from detectron2.utils.visualizer import Visualizer, ColorMode
 from detectron2.data.datasets import register_coco_instances
 from detectron2.data import MetadataCatalog, DatasetCatalog
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 # custom trainers
 from trainer import Trainer
@@ -109,6 +111,9 @@ def train(config, mode):
 
     job_name = config.pop("JOBNAME", "")
     eval_period = config.pop("EVAL_PERIOD", 100)
+    # MODELTYPE is metadata for our pipeline, not a detectron2 cfg key; drop it
+    # so it isn't passed to the strict merge_from_list below.
+    config.pop("MODELTYPE", None)
 
     # ── Declare SENSAUG namespace before merge_from_list ──────────────────
     # Detectron2's CfgNode is strict: keys must be pre-declared or the merge
