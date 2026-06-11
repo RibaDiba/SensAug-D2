@@ -44,6 +44,7 @@ from hooks.AP_val_hook import APVisualizationHook
 from hooks.loss_hook import TrainingLossHook
 from hooks.sens_aug_hook import SensAugHook
 from hooks.ap_iou_final_results_hook import AP_IOU_FinalResults
+from hooks.config_hook import TrainingConfigHook
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,11 @@ class Trainer(DefaultTrainer):
         job_name = getattr(cfg, "JOBNAME", "sensaug_d2")
 
         # ---- Diagnostic hooks (always registered) ----
+        hooks.append(
+            TrainingConfigHook(
+                output_dir=output_dir,
+            )
+        )
         hooks.append(
             IoUHook(
                 output_dir=output_dir,

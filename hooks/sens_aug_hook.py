@@ -111,6 +111,7 @@ class SensAugHook(HookBase):
 
         self._history: List[dict] = []
         self._val_dicts_cache: Optional[List[dict]] = None
+        self._current_batch: Optional[list] = None
 
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
@@ -119,8 +120,70 @@ class SensAugHook(HookBase):
     # HookBase interface
     # ------------------------------------------------------------------
 
+    def before_train(self) -> None:
+        """Wrap the trainer's data loader iterator to capture the current batch of inputs."""
+        trainer = self.trainer
+        if not hasattr(trainer, "_data_loader_iter"):
+            return
+
+        original_iter = trainer._data_loader_iter
+
+        class TrackingIterator:
+            def __init__(self, iterator, hook):
+                self.iterator = iterator
+                self.hook = hook
+
+            def __next__(self):
+                batch = next(self.iterator)
+                self.hook._current_batch = batch
+                return batch
+
+            def __iter__(self):
+                return self
+
+        trainer._data_loader_iter = TrackingIterator(original_iter, self)
+
     def after_step(self) -> None:
         iteration = self.trainer.iter
+        none_p = float(self.policy.none_prob.item())
+
+        # Collect the augmentations used in the batch that was just processed
+        augs_used = []
+        if hasattr(self, "_current_batch") and self._current_batch is not None:
+            for item in self._current_batch:
+                if isinstance(item, dict) and "applied_aug" in item:
+                    name, magnitude = item["applied_aug"]
+                    if name is not None and name != "None" and magnitude > 0.0:
+                        augs_used.append(f"{name}({magnitude:.2f})")
+                    else:
+                        augs_used.append("None")
+                else:
+                    augs_used.append("None")
+        else:
+            augs_used = ["Unknown"]
+
+        # Collect sampling distribution details
+        if self.policy.is_ready:
+            dist_strs = []
+            for name in self.perturbation_names:
+                i = self.policy._index.get(name)
+                if i is not None:
+                    levels = self.policy.levels[i].tolist()
+                    probs = self.policy.probs[i].tolist()
+                    lvl_pr_strs = [f"{l:.2f}:{p:.2f}" for l, p in zip(levels, probs)]
+                    dist_strs.append(f"{name}=[{', '.join(lvl_pr_strs)}]")
+            dist_summary = " | ".join(dist_strs)
+        else:
+            dist_summary = "Warmup (clean training, all None)"
+
+        logger.info(
+            "[SensAug Progress] Iter %d | none_prob: %.2f | Applied in batch: %s | Distribution: %s",
+            iteration, none_p, augs_used, dist_summary
+        )
+
+        # Clear current batch to free up memory
+        self._current_batch = None
+
         if iteration < self.warmup_iters:
             return  # clean warmup (policy.none_prob == 1.0)
         if (iteration - self.warmup_iters) % self.sa_period != 0:

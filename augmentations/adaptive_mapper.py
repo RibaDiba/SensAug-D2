@@ -207,6 +207,9 @@ class AdaptiveDatasetMapper(DatasetMapper):
         name, magnitude = self.policy.sample()
         if name is not None and magnitude > 0.0 and name in PERTURBATION_REGISTRY:
             image = self._apply_perturbation(image, name, magnitude)
+            dataset_dict["applied_aug"] = (name, magnitude)
+        else:
+            dataset_dict["applied_aug"] = ("None", 0.0)
 
         # ---- Pack result (mirrors DatasetMapper) ----
         image_shape = image.shape[:2]  # h, w

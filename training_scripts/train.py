@@ -126,7 +126,23 @@ def train(config, mode):
     from detectron2.config import CfgNode as CN
     sensaug_cfg = config.pop("SENSAUG", {})
     cfg.SENSAUG = CN()
-    cfg.SENSAUG.ENABLED         = bool(sensaug_cfg.get("ENABLED",          True))
+
+    sensaug_enabled = bool(sensaug_cfg.get("ENABLED", True))
+
+    # If augmentations are explicitly disabled (e.g., via --no-augs), respect that.
+    if not augmentation_enabled:
+        cfg.SENSAUG.ENABLED = False
+        cfg.DATASETS.AUGMENTATION = False
+    else:
+        # Otherwise, check if SensAug is enabled in config.
+        # If enabled, activate both. If disabled, fall back to baseline static augmentations.
+        if sensaug_enabled:
+            cfg.SENSAUG.ENABLED = True
+            cfg.DATASETS.AUGMENTATION = True
+        else:
+            cfg.SENSAUG.ENABLED = False
+            cfg.DATASETS.AUGMENTATION = True
+
     cfg.SENSAUG.WARMUP_ITERS    = int(sensaug_cfg.get("WARMUP_ITERS",      1000))
     cfg.SENSAUG.SA_PERIOD       = int(sensaug_cfg.get("SA_PERIOD",         1500))
     cfg.SENSAUG.NUM_LEVELS      = int(sensaug_cfg.get("NUM_LEVELS",        5))
@@ -142,7 +158,6 @@ def train(config, mode):
 
     cfg.JOBNAME = job_name
     cfg.EVAL_PERIOD = eval_period
-    cfg.DATASETS.AUGMENTATION = augmentation_enabled
     dir_name = job_name if job_name else Path(base_model).stem
     if cfg.OUTPUT_DIR:
         cfg.OUTPUT_DIR = str(Path(cfg.OUTPUT_DIR) / dir_name)
@@ -170,6 +185,12 @@ if __name__ == "__main__":
     if args.eval_period is not None:
         config["EVAL_PERIOD"] = args.eval_period
     if args.no_augs:
-        config.setdefault("DATASETS", {})["AUGMENTATION"] = False
+        if "DATASETS" not in config:
+            config["DATASETS"] = {}
+        config["DATASETS"]["AUGMENTATION"] = False
+    else:
+        if "DATASETS" not in config:
+            config["DATASETS"] = {}
+        config["DATASETS"]["AUGMENTATION"] = True
     register_instances(args.dataset)
     train(config, args.mode)
