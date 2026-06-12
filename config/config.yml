@@ -43,3 +43,13 @@ SENSAUG:
   VAL_DATASET: "my_dataset_val"
   MAX_SA_IMAGES: 9999        # cap on validation images per SA pass (compute control)
   KID_SUBSET_SIZE: 50       # torchmetrics KID subset size (clamped to image count)
+
+POST_EVAL:                   # post-training robustness eval on UNSEEN corruptions (test split)
+  ENABLED: true
+  GRID_SIZE: 6               # uniform magnitudes in [0,1] for the foreground-IoU degradation curves
+  SEVERITIES: [1.0]          # magnitudes at which to run the (heavier) AP + IoU evaluators
+  MAX_IMAGES: 200            # cap on test images for the lightweight curve sweep
+  CORRUPTIONS: []            # subset of held-out corruptions; empty = all
+
+ADDTIONAL_HOOKS:            # array with .py file paths to extra HookBase classes
+  - "hooks/nuclei_post_eval_hook.py"

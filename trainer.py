@@ -32,10 +32,15 @@ All keys default gracefully if not present in the cfg node.
 
 from __future__ import annotations
 
+import importlib.util
+import inspect
 import logging
+import sys
+from pathlib import Path
 
 from detectron2.data import build_detection_train_loader
 from detectron2.engine import DefaultTrainer
+from detectron2.engine.hooks import HookBase
 
 from augmentations.adaptive_mapper import AdaptiveDatasetMapper, AugmentationPolicy
 from augmentations.augmentations import PERTURBATION_REGISTRY, build_augmentations
@@ -47,6 +52,83 @@ from hooks.ap_iou_final_results_hook import AP_IOU_FinalResults
 from hooks.config_hook import TrainingConfigHook
 
 logger = logging.getLogger(__name__)
+
+
+def _build_hook_kwargs(cls, context: dict) -> dict:
+    """Pick the subset of ``context`` that ``cls.__init__`` actually accepts.
+
+    Lets heterogeneous hook constructors be instantiated from a shared pool of
+    training context without per-hook config:
+
+    * no custom ``__init__`` (e.g. a ``pass`` stub) -> no kwargs;
+    * constructor with ``**kwargs`` -> the whole context;
+    * otherwise -> only context keys whose names match named parameters.
+    """
+    init = cls.__init__
+    if init is object.__init__:
+        return {}
+    params = inspect.signature(init).parameters
+    if any(p.kind is p.VAR_KEYWORD for p in params.values()):
+        return dict(context)
+    return {k: v for k, v in context.items() if k in params}
+
+
+def _load_additional_hooks(paths, context: dict, repo_root: Path) -> list:
+    """Load extra ``HookBase`` subclasses from a list of ``.py`` file paths.
+
+    Each path (relative to ``repo_root`` unless absolute) is imported as a
+    module; every ``HookBase`` subclass *defined in that file* is instantiated
+    with :func:`_build_hook_kwargs`.  Failures are logged and skipped so one bad
+    entry never kills the training run.
+    """
+    loaded: list = []
+    for raw in paths or []:
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        file = Path(raw.strip())
+        if not file.is_absolute():
+            file = repo_root / file
+        if not file.is_file():
+            logger.warning("[Trainer] Additional hook not found, skipping: %s", file)
+            continue
+
+        try:
+            mod_name = f"_adtl_hook_{file.stem}"
+            spec = importlib.util.spec_from_file_location(mod_name, file)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[mod_name] = module
+            spec.loader.exec_module(module)
+        except Exception:
+            logger.exception("[Trainer] Failed to import additional hook: %s", file)
+            continue
+
+        found = [
+            obj
+            for obj in vars(module).values()
+            if isinstance(obj, type)
+            and issubclass(obj, HookBase)
+            and obj is not HookBase
+            and obj.__module__ == mod_name
+        ]
+        if not found:
+            logger.warning(
+                "[Trainer] No HookBase subclass defined in %s, skipping.", file
+            )
+            continue
+
+        for cls in found:
+            try:
+                hook = cls(**_build_hook_kwargs(cls, context))
+            except Exception:
+                logger.exception(
+                    "[Trainer] Failed to instantiate %s from %s.", cls.__name__, file
+                )
+                continue
+            loaded.append(hook)
+            logger.info(
+                "[Trainer] Registered additional hook %s from %s.", cls.__name__, file
+            )
+    return loaded
 
 
 class Trainer(DefaultTrainer):
@@ -195,5 +277,23 @@ class Trainer(DefaultTrainer):
             )
         else:
             logger.info("[Trainer] SensAug disabled (SENSAUG.ENABLED=False).")
+
+        # ---- Additional hooks declared in cfg.ADDTIONAL_HOOKS ----
+        # Each entry is a .py file path; the HookBase subclass(es) defined inside
+        # are imported and instantiated with whatever training context their
+        # constructor accepts.  getattr default keeps older configs working.
+        context = {
+            "cfg": cfg,
+            "output_dir": output_dir,
+            "job_name": job_name,
+            "eval_period": eval_period,
+        }
+        hooks.extend(
+            _load_additional_hooks(
+                getattr(cfg, "ADDTIONAL_HOOKS", []),
+                context,
+                repo_root=Path(__file__).resolve().parent,
+            )
+        )
 
         return hooks

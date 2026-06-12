@@ -117,6 +117,13 @@ def train(config, mode):
     # DATASETS.AUGMENTATION is not a native Detectron2 cfg key; pop it before
     # the strict merge_from_list, then set it as a plain attribute afterward.
     augmentation_enabled = bool(config.get("DATASETS", {}).pop("AUGMENTATION", True))
+    # ADDTIONAL_HOOKS is not a native Detectron2 cfg key either; pop it (dropping
+    # blank placeholders) so the strict merge doesn't choke, then reattach below.
+    adtl_hooks = [
+        h.strip()
+        for h in (config.pop("ADDTIONAL_HOOKS", []) or [])
+        if isinstance(h, str) and h.strip()
+    ]
 
     # ── Declare SENSAUG namespace before merge_from_list ──────────────────
     # Detectron2's CfgNode is strict: keys must be pre-declared or the merge
@@ -154,10 +161,22 @@ def train(config, mode):
     cfg.SENSAUG.KID_SUBSET_SIZE = int(sensaug_cfg.get("KID_SUBSET_SIZE",   50))
     # ──────────────────────────────────────────────────────────────────────
 
+    # ── Declare POST_EVAL namespace before merge_from_list (same strict-merge
+    # reason as SENSAUG above).  SEVERITIES/CORRUPTIONS are lists, set directly. ──
+    posteval_cfg = config.pop("POST_EVAL", {})
+    cfg.POST_EVAL = CN()
+    cfg.POST_EVAL.ENABLED     = bool(posteval_cfg.get("ENABLED",    True))
+    cfg.POST_EVAL.GRID_SIZE   = int(posteval_cfg.get("GRID_SIZE",   6))
+    cfg.POST_EVAL.MAX_IMAGES  = int(posteval_cfg.get("MAX_IMAGES",  200))
+    cfg.POST_EVAL.SEVERITIES  = [float(s) for s in posteval_cfg.get("SEVERITIES", [1.0])]
+    cfg.POST_EVAL.CORRUPTIONS = [str(c) for c in posteval_cfg.get("CORRUPTIONS", [])]
+    # ──────────────────────────────────────────────────────────────────────
+
     cfg.merge_from_list(flatten_cfg(config))
 
     cfg.JOBNAME = job_name
     cfg.EVAL_PERIOD = eval_period
+    cfg.ADDTIONAL_HOOKS = adtl_hooks
     dir_name = job_name if job_name else Path(base_model).stem
     if cfg.OUTPUT_DIR:
         cfg.OUTPUT_DIR = str(Path(cfg.OUTPUT_DIR) / dir_name)
