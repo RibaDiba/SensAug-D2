@@ -10,7 +10,8 @@ resizing to the InceptionV3 input, device placement, and clamping the KID
 
 from __future__ import annotations
 
-from typing import List, Optional, Sequence
+import os
+from typing import Dict, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -18,6 +19,52 @@ import torch
 
 #: InceptionV3 input resolution used by the KID feature extractor.
 _INCEPTION_SIZE = 299
+
+#: Weights torchmetrics/torch_fidelity lazily download on first KID use.
+_INCEPTION_WEIGHTS_FILENAME = "weights-inception-2015-12-05-6726825d.pth"
+_INCEPTION_WEIGHTS_URL = (
+    "https://github.com/toshas/torch-fidelity/releases/download/v0.2.0/"
+    + _INCEPTION_WEIGHTS_FILENAME
+)
+
+#: One metric instance per (subset_size, device) — constructing
+#: KernelInceptionDistance reloads the ~91 MB InceptionV3 from disk every time,
+#: and an SA pass calls compute_kid once per (perturbation, alpha) pair.
+_KID_CACHE: Dict[Tuple[int, str], object] = {}
+
+
+def _check_inception_weights_cached() -> None:
+    """Fail fast if the InceptionV3 weights are not in the torch.hub cache.
+
+    Cluster compute nodes have no internet access, so the lazy download inside
+    ``KernelInceptionDistance`` would otherwise crash the run only *after* the
+    warmup iterations, when the first sensitivity analysis fires.
+    """
+    path = os.path.join(torch.hub.get_dir(), "checkpoints", _INCEPTION_WEIGHTS_FILENAME)
+    if not os.path.isfile(path):
+        raise RuntimeError(
+            f"InceptionV3 weights for KID not found at {path} and compute nodes "
+            f"cannot download them. Pre-download on a node with internet access:\n"
+            f"  mkdir -p {os.path.dirname(path)}\n"
+            f"  wget -O {path} {_INCEPTION_WEIGHTS_URL}\n"
+            f"(set TORCH_HOME to control the cache location)"
+        )
+
+
+def _get_kid_metric(subset_size: int, device: torch.device):
+    # Imported lazily so the rest of the package works without torchmetrics
+    # installed (e.g. when only running the pure-math unit tests).
+    from torchmetrics.image.kid import KernelInceptionDistance
+
+    key = (subset_size, str(device))
+    metric = _KID_CACHE.get(key)
+    if metric is None:
+        _check_inception_weights_cached()
+        metric = KernelInceptionDistance(subset_size=subset_size, normalize=False).to(device)
+        _KID_CACHE[key] = metric
+    else:
+        metric.reset()
+    return metric
 
 
 def _to_uint8_nchw(images: Sequence[np.ndarray]) -> torch.Tensor:
@@ -61,10 +108,6 @@ def compute_kid(
         The mean KID (a non-negative float; ``0.0`` if there are too few images
         to estimate it).
     """
-    # Imported lazily so the rest of the package works without torchmetrics
-    # installed (e.g. when only running the pure-math unit tests).
-    from torchmetrics.image.kid import KernelInceptionDistance
-
     n = min(len(clean_images), len(perturbed_images))
     if n < 2:
         return 0.0
@@ -76,7 +119,7 @@ def compute_kid(
     clean = _to_uint8_nchw(clean_images).to(device)
     perturbed = _to_uint8_nchw(perturbed_images).to(device)
 
-    kid = KernelInceptionDistance(subset_size=subset, normalize=False).to(device)
+    kid = _get_kid_metric(subset, device)
     kid.update(clean, real=True)
     kid.update(perturbed, real=False)
     mean, _std = kid.compute()

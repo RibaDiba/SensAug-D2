@@ -33,13 +33,13 @@ SOLVER:
 OUTPUT_DIR: "model_output/"
 
 SENSAUG:
-  ENABLED: false
+  ENABLED: true
   WARMUP_ITERS: 1000        # clean-training iterations before the first SA pass
-  SA_PERIOD: 1500           # iterations between sensitivity-analysis passes
+  SA_PERIOD: 600           # iterations between sensitivity-analysis passes
   NUM_LEVELS: 5             # L sensitive intensity levels per augmentation
   ALPHA_GRID_SIZE: 11       # diagnostic magnitudes swept in [0, 1]
   LAMBDA: 0.05              # regularizer in g(alpha)
   NONE_PROB: 0.2            # prob. of skipping augmentation after warmup
   VAL_DATASET: "my_dataset_val"
-  MAX_SA_IMAGES: 200        # cap on validation images per SA pass (compute control)
+  MAX_SA_IMAGES: 9999        # cap on validation images per SA pass (compute control)
   KID_SUBSET_SIZE: 50       # torchmetrics KID subset size (clamped to image count)
