@@ -30,6 +30,8 @@ SOLVER:
   WARMUP_ITERS: 800
   WARMUP_FACTOR: 0.1
 
+EVAL_PERIOD: 100             # iterations between in-training evals (drives BOTH the IoU and AP validation hooks)
+
 OUTPUT_DIR: "model_output/"
 
 SENSAUG:
