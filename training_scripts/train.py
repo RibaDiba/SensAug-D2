@@ -73,15 +73,22 @@ def parse_args():
     )
     parser.add_argument("--num_iterations", type=int, default=None, help="Override SOLVER.MAX_ITER")
     parser.add_argument("--base_model", type=str, default=None, help="Override BASE_MODEL")
-    parser.add_argument("--no-augs", action="store_true", help="Disable all live augmentations during training")
     parser.add_argument("--jobname", type=str, default=None, help="Override JOBNAME (used in hook outputs)")
     parser.add_argument("--eval_period", type=int, default=None, help="Override EVAL_PERIOD (IoU eval frequency)")
-    parser.add_argument(
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
+        "--no-augs",
+        action="store_true",
+        help="Disable all live augmentations during training "
+             "(overrides DATASETS.AUGMENTATION and SENSAUG.ENABLED from the config file)",
+    )
+    mode_group.add_argument(
         "--mode",
         choices=["sensaug", "baseline"],
-        default="sensaug",
+        default=None,
         help="sensaug = sensitivity-informed adaptive aug (SensAugHook); "
-             "baseline = static augmentations, no sensitivity analysis",
+             "baseline = static augmentations, no sensitivity analysis. "
+             "Omitted = use DATASETS.AUGMENTATION / SENSAUG.ENABLED from the config file.",
     )
     parser.add_argument(
         "--dataset",
@@ -94,7 +101,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def train(config, mode):
+def train(config):
 
     train_metadata = MetadataCatalog.get(config["DATASETS"]["TRAIN"][0])
     train_dataset_dicts = DatasetCatalog.get(config["DATASETS"]["TRAIN"][0])
@@ -150,6 +157,12 @@ def train(config, mode):
             cfg.SENSAUG.ENABLED = False
             cfg.DATASETS.AUGMENTATION = True
 
+    print(
+        f"[train] Augmentation mode resolved: "
+        f"DATASETS.AUGMENTATION={cfg.DATASETS.AUGMENTATION}, "
+        f"SENSAUG.ENABLED={cfg.SENSAUG.ENABLED}"
+    )
+
     cfg.SENSAUG.WARMUP_ITERS    = int(sensaug_cfg.get("WARMUP_ITERS",      1000))
     cfg.SENSAUG.SA_PERIOD       = int(sensaug_cfg.get("SA_PERIOD",         1500))
     cfg.SENSAUG.NUM_LEVELS      = int(sensaug_cfg.get("NUM_LEVELS",        5))
@@ -203,13 +216,13 @@ if __name__ == "__main__":
         config["JOBNAME"] = args.jobname
     if args.eval_period is not None:
         config["EVAL_PERIOD"] = args.eval_period
+    # CLI flags override the config file only when explicitly passed; otherwise
+    # DATASETS.AUGMENTATION / SENSAUG.ENABLED come from the YAML untouched.
     if args.no_augs:
-        if "DATASETS" not in config:
-            config["DATASETS"] = {}
-        config["DATASETS"]["AUGMENTATION"] = False
-    else:
-        if "DATASETS" not in config:
-            config["DATASETS"] = {}
-        config["DATASETS"]["AUGMENTATION"] = True
+        config.setdefault("DATASETS", {})["AUGMENTATION"] = False
+        config.setdefault("SENSAUG", {})["ENABLED"] = False
+    elif args.mode is not None:
+        config.setdefault("DATASETS", {})["AUGMENTATION"] = True
+        config.setdefault("SENSAUG", {})["ENABLED"] = args.mode == "sensaug"
     register_instances(args.dataset)
-    train(config, args.mode)
+    train(config)

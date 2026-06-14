@@ -6,11 +6,18 @@ JOBNAME: ""
 MODEL:
   WEIGHTS: "/projects/PUCHALLA/LLP2024/tumor-segmentation/models/BACKBONES/model_final_a3ec72.pkl"
   ROI_HEADS:
-    NUM_CLASSES: 1
+    NUM_CLASSES: 8           # Cityscapes things: person, rider, car, truck, bus, train, motorcycle, bicycle
     BATCH_SIZE_PER_IMAGE: 512
     POSITIVE_FRACTION: 0.5
-    SCORE_THRESH_TEST: 0.3
-    NMS_THRESH_TEST: 0.3
+    SCORE_THRESH_TEST: 0.05  # detectron2 default; 0.3 (tumor config) suppresses low-confidence dets and hurts AP
+    NMS_THRESH_TEST: 0.5     # detectron2 default; 0.3 is too aggressive for crowded street scenes
+
+INPUT:
+  # Cityscapes frames are 2048x1024; detectron2's Cityscapes reference recipe
+  MIN_SIZE_TRAIN: [800, 832, 864, 896, 928, 960, 992, 1024]
+  MIN_SIZE_TEST: 1024
+  MAX_SIZE_TRAIN: 2048
+  MAX_SIZE_TEST: 2048
 
 DATASETS:
   TRAIN: ["my_dataset_train"]
@@ -18,19 +25,20 @@ DATASETS:
   AUGMENTATION: false
 
 DATALOADER:
-  NUM_WORKERS: 1
+  NUM_WORKERS: 4
   FILTER_EMPTY_ANNOTATIONS: false
 
 SOLVER:
-  MAX_ITER: 5000
+  # 2975 train images / IMS_PER_BATCH 2 -> ~1488 iters per epoch
+  MAX_ITER: 20000
   IMS_PER_BATCH: 2
-  BASE_LR: 0.0005
-  STEPS: [3000, 4000]
-  GAMMA: 0.5
-  WARMUP_ITERS: 800
-  WARMUP_FACTOR: 0.1
+  BASE_LR: 0.0025            # linear-scaled from the 0.01 @ batch-8 reference recipe
+  STEPS: [14000, 18000]
+  GAMMA: 0.1
+  WARMUP_ITERS: 1000
+  WARMUP_FACTOR: 0.001
 
-OUTPUT_DIR: "model_output/"
+OUTPUT_DIR: "model_output/cityscapes/"
 
 SENSAUG:
   ENABLED: false
