@@ -55,11 +55,11 @@ SENSAUG:
   KID_SUBSET_SIZE: 50       # torchmetrics KID subset size (clamped to image count)
 
 POST_EVAL:                   # post-training robustness eval on UNSEEN corruptions (test split)
-  ENABLED: false
+  ENABLED: true              # run CityscapesPostTrainHook (ImageNet-C + weather/driving corruptions)
   GRID_SIZE: 6               # uniform magnitudes in [0,1] for the foreground-IoU degradation curves
-  SEVERITIES: [1.0]          # magnitudes at which to run the (heavier) AP + IoU evaluators
-  MAX_IMAGES: 200            # cap on test images for the lightweight curve sweep
-  CORRUPTIONS: []            # subset of held-out corruptions; empty = all
+  SEVERITIES: [0.2, 0.4, 0.6, 0.8, 1.0]  # 5 levels (~ImageNet-C severities) for the mask-AP + IoU evaluators
+  MAX_IMAGES: 200            # cap on test images for the lightweight foreground-IoU curve sweep
+  CORRUPTIONS: []            # subset of held-out corruptions; empty = all (8 ImageNet-C + fog/snow/frost/low_light/spatter/advsteer)
 
 ADDTIONAL_HOOKS:            # array with .py file paths to extra HookBase classes
-  - ""
+  - "hooks/cityscapes_post_eval_hook.py"

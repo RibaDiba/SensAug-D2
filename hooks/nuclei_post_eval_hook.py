@@ -72,6 +72,11 @@ class NucleiPostTrainHook(HookBase):
         save_json: If False, only the plot is written (curves/stats JSON skipped).
     """
 
+    #: Held-out corruption registry swept by this hook.  Subclasses override this
+    #: class attribute to evaluate a different set (e.g. the Cityscapes one);
+    #: it is read in ``__init__`` to default ``corruption_names``.
+    registry: dict = HELDOUT_PERTURBATION_REGISTRY
+
     def __init__(
         self,
         output_dir: str,
@@ -114,7 +119,7 @@ class NucleiPostTrainHook(HookBase):
         self.corruption_names = (
             [str(c) for c in corruption_names]
             if corruption_names
-            else list(HELDOUT_PERTURBATION_REGISTRY.keys())
+            else list(self.registry.keys())
         )
 
         self.job_name = job_name or getattr(cfg, "JOBNAME", "") or "model"
@@ -175,7 +180,7 @@ class NucleiPostTrainHook(HookBase):
 
         corruptions: Dict[str, dict] = {}
         for name in self.corruption_names:
-            factory = HELDOUT_PERTURBATION_REGISTRY[name]
+            factory = self.registry[name]
             ma_list: List[float] = []
             for a in alphas:
                 if a <= 0.0:
@@ -227,6 +232,13 @@ class NucleiPostTrainHook(HookBase):
                 distributed=(cfg.MODEL.DEVICE != "cpu"),
                 output_dir=self._coco_tmp_dir,
             )
+            # pycocotools' loadRes deep-copies the GT dataset's "info" block; the
+            # COCO JSONs produced by this repo's converters (nuclei + cityscapes)
+            # omit it, which raises KeyError once the model emits predictions.
+            # Default it defensively so AP is actually computed, not silently zeroed.
+            gt = getattr(coco_eval, "_coco_api", None)
+            if gt is not None and isinstance(getattr(gt, "dataset", None), dict):
+                gt.dataset.setdefault("info", {})
             iou_eval = PerImageIoUEvaluator(self.test_dataset)
             results = inference_on_dataset(model, loader, DatasetEvaluators([coco_eval, iou_eval]))
         except Exception:
@@ -252,7 +264,7 @@ class NucleiPostTrainHook(HookBase):
 
         sevs = [s for s in self.severities if s > 0.0]
         for name in self.corruption_names:
-            factory = HELDOUT_PERTURBATION_REGISTRY[name]
+            factory = self.registry[name]
             ap_record[name] = {}
             iou_record[name] = {}
             for sev in sevs:
